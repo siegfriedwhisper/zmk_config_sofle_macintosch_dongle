@@ -127,19 +127,30 @@ void print_percentage(uint8_t digit, uint16_t x, uint16_t y, uint16_t scale, uin
 #endif
 }
 
-static uint16_t bar_fill_color_for_level(uint8_t level) {
-    // Gradient: 0% = dark red, 5% = red, 100% = green
-    if (level >= 100) return 0x07E0; // green
-    if (level > 5) {
-        uint8_t t = (level - 5) * 255 / 95; // 0..255
-        uint8_t r = (31 * (255 - t)) / 255; // 31→0
-        uint8_t g = (63 * t) / 255;         // 0→63
-        return (r << 11) | (g << 5);
+// Rainbow RGB565: maps position t (0-255, bottom→top) to rainbow color
+// 6 segments: Red→Yellow→Green→Cyan→Blue→Purple
+static uint16_t rainbow_rgb565(uint8_t t) {
+    uint8_t r, g, b;
+    if (t < 43) {
+        // Red (t=0) → Yellow (t=42)
+        r = 31; g = t * 63 / 42; b = 0;
+    } else if (t < 85) {
+        // Yellow (t=43) → Green (t=84)
+        r = 31 - (t - 43) * 31 / 42; g = 63; b = 0;
+    } else if (t < 128) {
+        // Green (t=85) → Cyan (t=127)
+        r = 0; g = 63; b = (t - 85) * 31 / 43;
+    } else if (t < 170) {
+        // Cyan (t=128) → Blue (t=169)
+        r = 0; g = 63 - (t - 128) * 63 / 42; b = 31;
+    } else if (t < 213) {
+        // Blue (t=170) → Purple (t=212)
+        r = (t - 170) * 31 / 43; g = 0; b = 31;
+    } else {
+        // Purple (t=213) → Deep Pink (t=255)
+        r = 31; g = 0; b = 31 - (t - 213) * 16 / 42;
     }
-    // 0-5%: dark red → red
-    uint8_t t = level * 255 / 5;
-    uint8_t r = 16 + (15 * t) / 255; // 16→31
-    return (r << 11);
+    return (r << 11) | (g << 5) | b;
 }
 
 static uint16_t bar_bg_color_for_side(bool is_left) {
@@ -150,17 +161,24 @@ static void draw_one_bar(uint8_t level, uint16_t x_pos, bool is_left) {
     uint16_t filled_h = ((uint16_t)level * BAR_H) / 100;
     if (filled_h > BAR_H) filled_h = BAR_H;
     uint16_t empty_h = BAR_H - filled_h;
-
-    uint16_t fill_color = bar_fill_color_for_level(level);
     uint16_t bg_color = bar_bg_color_for_side(is_left);
 
     // Fill entire bar with bg color
     fill_buffer_color(buf_bar, BAR_W * BAR_H * 2, bg_color);
 
-    // Overwrite bottom portion with battery level color
+    // Rainbow gradient on the filled portion: each row a different color
+    // Bottom row = red, top row = purple
     if (filled_h > 0) {
-        fill_buffer_color(buf_bar + (empty_h * BAR_W * 2),
-                         filled_h * BAR_W * 2, fill_color);
+        for (uint16_t y = empty_h; y < BAR_H; y++) {
+            uint8_t t = ((y - empty_h) * 255) / filled_h;
+            uint16_t color = rainbow_rgb565(t);
+            // Write 5 pixels (BAR_W) for this row, big-endian (same format as fill_buffer_color)
+            uint16_t off = y * BAR_W * 2;
+            for (int w = 0; w < BAR_W; w++) {
+                buf_bar[off + w * 2 + 0] = (color >> 8) & 0xFF;
+                buf_bar[off + w * 2 + 1] = color & 0xFF;
+            }
+        }
     }
 
     render_filled_rectangle(buf_bar, x_pos, 0, BAR_W, BAR_H);
