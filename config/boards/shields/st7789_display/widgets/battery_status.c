@@ -186,11 +186,9 @@ static void draw_one_bar(uint8_t level, uint16_t x_pos, bool is_left) {
 }
 
 static void draw_battery_bars(void) {
-    // After clearing bonds and pairing left first, then right:
-    // source 0 = left (bbtrackball) → left bar
-    // source 1 = right (trackpoint) → right bar
-    draw_one_bar(battery_state_0.level, 0, true);
-    draw_one_bar(battery_state_1.level, 240 - BAR_W, false);
+    // Hardcoded for current pairing: source 0 = right, source 1 = left
+    draw_one_bar(battery_state_1.level, 0, true);    // source 1 (left) → left bar
+    draw_one_bar(battery_state_0.level, 240 - BAR_W, false);  // source 0 (right) → right bar
 }
 
 void set_battery_symbol() {
