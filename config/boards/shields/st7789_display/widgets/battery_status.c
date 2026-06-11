@@ -170,7 +170,7 @@ static void draw_one_bar(uint8_t level, uint16_t x_pos, bool is_left) {
     // Bottom row = red, top row = purple
     if (filled_h > 0) {
         for (uint16_t y = empty_h; y < BAR_H; y++) {
-            uint8_t t = ((y - empty_h) * 255) / filled_h;
+            uint8_t t = 255 - ((y - empty_h) * 255) / filled_h;
             uint16_t color = rainbow_rgb565(t);
             // Write 5 pixels (BAR_W) for this row, big-endian (same format as fill_buffer_color)
             uint16_t off = y * BAR_W * 2;
