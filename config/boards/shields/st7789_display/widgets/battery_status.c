@@ -25,12 +25,29 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static bool battery_widget_initialized = false;
 static bool battery_widget_running = false;
-static struct peripheral_battery_state battery_state_0;
-static struct peripheral_battery_state battery_state_1;
+// Side mapping: profile index → 0=left(bbtrackball), 1=right(trackpoint), -1=unknown
+static int8_t profile_to_side[CONFIG_BT_MAX_PAIRED];
+// Identified battery states
+static struct peripheral_battery_state battery_state_left;
+static struct peripheral_battery_state battery_state_right;
 static uint16_t *scaled_bitmap_1;
 
 static uint8_t previous_battery_level_0 = 0;
 static uint8_t previous_battery_level_1 = 0;
+
+// Build side mapping on first battery event by reading BLE profile name
+// "Sofle L" → left, "Sofle R" → right
+static void identify_side(uint8_t source) {
+    int8_t saved = zmk_ble_active_profile_index();
+    zmk_ble_prof_select(source);
+    // Name is cached from bond, no sleep needed
+    char *name = zmk_ble_active_profile_name();
+    if (name) {
+        if (strcmp(name, "Sofle L") == 0) profile_to_side[source] = 0;
+        else if (strcmp(name, "Sofle R") == 0) profile_to_side[source] = 1;
+    }
+    if (saved >= 0) zmk_ble_prof_select(saved);
+}
 
 #ifdef CONFIG_SHOW_SINGLE_BATTERY
 static const uint16_t font_offset = 6;
@@ -185,10 +202,8 @@ static void draw_one_bar(uint8_t level, uint16_t x_pos, bool is_left) {
 }
 
 static void draw_battery_bars(void) {
-    // source 0 = first paired (left), source 1 = second paired (right)
-    // Pair left first to match: source 0 → left bar, source 1 → right bar
-    draw_one_bar(battery_state_0.level, 0, true);
-    draw_one_bar(battery_state_1.level, 240 - BAR_W, false);
+    draw_one_bar(battery_state_left.level, 0, true);
+    draw_one_bar(battery_state_right.level, 240 - BAR_W, false);
 }
 
 void set_battery_symbol() {
@@ -209,10 +224,18 @@ void set_battery_symbol() {
 }
 
 void battery_status_update_cb(struct peripheral_battery_state state) {
-    if (state.source == 0) {
-        battery_state_0 = state;
+    // Identify side on first event from this source
+    if (profile_to_side[state.source] < 0 && state.source < CONFIG_BT_MAX_PAIRED) {
+        identify_side(state.source);
+    }
+    if (profile_to_side[state.source] == 0) {
+        battery_state_left = state;
+    } else if (profile_to_side[state.source] == 1) {
+        battery_state_right = state;
     } else {
-        battery_state_1 = state;
+        // Fallback: unknown source, guess by source number
+        if (state.source == 0) battery_state_left = state;
+        else battery_state_right = state;
     }
     if (battery_widget_initialized) {
     }
@@ -262,9 +285,12 @@ void zmk_widget_peripheral_battery_status_init() {
 void initialize_battery_status() { battery_widget_initialized = true; }
 
 void start_battery_status() {
-    // Draw bars and empty percentages on first start
-    battery_state_0.level = 0;
-    battery_state_1.level = 0;
+    // Init side mapping
+    for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
+        profile_to_side[i] = -1;
+    }
+    battery_state_left.level = 0;
+    battery_state_right.level = 0;
     set_battery_symbol();
     battery_widget_running = true;
 }
