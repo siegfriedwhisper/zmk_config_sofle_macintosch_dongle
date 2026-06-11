@@ -185,11 +185,10 @@ static void draw_one_bar(uint8_t level, uint16_t x_pos, bool is_left) {
 }
 
 static void draw_battery_bars(void) {
-    // Swap: ZMK assigns source based on BLE connection order,
-    // if right hand connects first it becomes source 0
-    // So: source 1 → left bar, source 0 → right bar
-    draw_one_bar(battery_state_1.level, 0, true);
-    draw_one_bar(battery_state_0.level, 240 - BAR_W, false);
+    // source 0 = first paired (left), source 1 = second paired (right)
+    // Pair left first to match: source 0 → left bar, source 1 → right bar
+    draw_one_bar(battery_state_0.level, 0, true);
+    draw_one_bar(battery_state_1.level, 240 - BAR_W, false);
 }
 
 void set_battery_symbol() {
