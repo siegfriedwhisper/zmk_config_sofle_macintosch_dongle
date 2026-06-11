@@ -21,6 +21,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/events/battery_state_changed.h>
 
 #include "battery_status.h"
+/* BUILD_CACHE_BUST_2026_06_11 */
 #include "helpers/display.h"
 
 static bool battery_widget_initialized = false;
