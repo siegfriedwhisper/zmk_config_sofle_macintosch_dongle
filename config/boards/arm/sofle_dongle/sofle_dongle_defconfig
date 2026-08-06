@@ -40,6 +40,10 @@ CONFIG_ZMK_IDLE_TIMEOUT=600000
 CONFIG_BT_MAX_CONN=7
 CONFIG_BT_MAX_PAIRED=7
 
+# Split BLE 连接参数：降低从设备延迟(latency 30→4)，改善小红点输入延迟
+# 30×7.5ms=225ms 睡眠窗口 → 4×7.5ms=30ms
+CONFIG_ZMK_SPLIT_BLE_PREF_LATENCY=4
+
 # Keyboard backlight Setting
 # enable keyboard backlight
 CONFIG_ZMK_BACKLIGHT=y                           
