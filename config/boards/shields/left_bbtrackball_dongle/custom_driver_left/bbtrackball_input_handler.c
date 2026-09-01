@@ -51,6 +51,12 @@ static struct k_work_q bbtrackball_work_q;
 #define ARROW_TRIGGER_THRESHOLD 4
 #define ARROW_REPEAT_MS 35
 
+/* keymap 中对应按键的位置号 */
+#define ARROW_KEY_POSITION 32
+#define SPACE_KEY_POSITION 61
+/* 视为"正在移动"的时间窗（ms） */
+#define TRACKBALL_ACTIVE_MS 40
+
 /* 查表：delta(ms) -> delta_px，delta 超出表范围时兜底 BASE_MOVE_PIXELS */
 #define SPEED_LUT_SIZE 45
 static const uint16_t speed_lut[SPEED_LUT_SIZE] = {
@@ -115,7 +121,7 @@ struct bbtrackball_data {
 
 /* ========================================================= */
 
-bool trackball_is_active(void) { return (k_uptime_get_32() - last_move_time) < 40; }
+bool trackball_is_active(void) { return (k_uptime_get_32() - last_move_time) < TRACKBALL_ACTIVE_MS; }
 
 /* =========================================================
  * Position listener
@@ -127,11 +133,11 @@ static int space_listener_cb(const zmk_event_t *eh) {
     if (!ev)
         return 0;
 
-    if (ev->position == 32) {
+    if (ev->position == ARROW_KEY_POSITION) {
         arrow_key_pressed = ev->state;
     }
 
-    if (ev->position == 61) {
+    if (ev->position == SPACE_KEY_POSITION) {
         space_pressed = ev->state;
     }
 
