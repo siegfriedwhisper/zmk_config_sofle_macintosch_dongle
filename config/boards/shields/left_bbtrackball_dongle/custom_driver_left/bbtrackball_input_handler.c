@@ -15,7 +15,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 
-#include <math.h>
 #include <stdlib.h>
 
 #include <zmk/events/position_state_changed.h>
@@ -49,11 +48,20 @@ static struct k_work_q bbtrackball_work_q;
  * ========================================================= */
 
 #define BASE_MOVE_PIXELS 3
-#define EXPONENTIAL_BASE 1.12f
-#define SPEED_SCALE 60.0f
-
 #define ARROW_TRIGGER_THRESHOLD 4
 #define ARROW_REPEAT_MS 35
+
+/* 查表：delta(ms) -> delta_px，delta 超出表范围时兜底 BASE_MOVE_PIXELS */
+#define SPEED_LUT_SIZE 45
+static const uint16_t speed_lut[SPEED_LUT_SIZE] = {
+    /* delta=0 占位（实际不会被访问） */
+    0,
+    /* 1-44 */
+    2693, 90, 29, 16, 12, 9, 8, 7, 6, 6, 6, 5,
+    5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4,
+};
 
 /* =========================================================
  * Runtime State
@@ -157,9 +165,7 @@ static void dir_edge_cb(const struct device *dev, struct gpio_callback *cb, uint
                 if (delta == 0)
                     delta = 1;
 
-                float speed_factor = SPEED_SCALE / (float)delta;
-                float mult = powf(EXPONENTIAL_BASE, speed_factor);
-                int delta_px = (int)roundf(BASE_MOVE_PIXELS * mult);
+                int delta_px = (delta < SPEED_LUT_SIZE) ? speed_lut[delta] : BASE_MOVE_PIXELS;
 
                 if (i < 2)
                     dx_acc += d->sign * delta_px;
