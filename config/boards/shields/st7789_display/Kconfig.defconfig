@@ -70,10 +70,6 @@ if SHIELD_ST7789_DISPLAY
 config ZMK_SPLIT
     default y
 
-config DEFAULT_SCREEN
-    string "Default screen"
-    default "snake"
-
 config SHOW_SINGLE_BATTERY
     bool "Show single battery"
     default n
@@ -110,13 +106,9 @@ config THEME_BG_DARKER_COLOR
     string "Theme background darker color"
     default "121313"
 
-config SNAKE_FATNESS
-    int "Snake fatness"
-    default 2
-
 config SPLASH_USE_SNAKE_2
     bool "Use Snake 2 Splash screen"
-    default n
+    default y
 
 config USE_SPLASH_SOUND
     bool "Use splash sound"
@@ -154,38 +146,10 @@ config INFO_RIGHT_SLOT
     string "Info right slot"
     default "layer"
 
-config SNAKE_BOARD_SIZE
-    string "Snake board size"
-    default "XL"
-
-config SNAKE_WALK_INTERVAL
-    int "Snake walk interval"
-    default 10
-
-config LOGO_WALK_INTERVAL
-    int "Logo walk interval"
-    default 50
-
 config CHECKERED_BOARD
     bool "Checkered board"
     default y
 
-config WPM_SLOW
-    int "WPM slow"
-    default 20
-
-config WPM_MEDIUM
-    int "WPM medium"
-    default 40
-
-config WPM_FAST
-    int "WPM fast"
-    default 80
-
-config WPM_SUPER_FAST
-    int "WPM super fast"
-    default 90
-    
 config USE_COMPLETE_CUSTOM_THEME
     bool "Complete custom theme"
     default n

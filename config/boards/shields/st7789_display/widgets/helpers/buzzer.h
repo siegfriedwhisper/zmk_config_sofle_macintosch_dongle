@@ -21,8 +21,6 @@ typedef enum {
 	notification_song,
 	startup_song,
 	powerd_down_song,
-	snake_game_intro,
-	snake_eat_sound,
 	no_song,
 } SongName;
 
@@ -36,5 +34,3 @@ void play_error_song(void);
 void play_notification_song(void);
 void play_startup_song(void);
 void play_powerd_down_song(void);
-void play_snake_eat_sound(void);
-void play_snake_game_intro(void);

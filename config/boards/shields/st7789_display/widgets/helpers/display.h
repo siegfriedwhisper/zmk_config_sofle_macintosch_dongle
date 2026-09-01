@@ -76,7 +76,6 @@ typedef enum {
 } FontSize;
 
 typedef enum {
-    SNAKE_SCREEN,
     STATUS_SCREEN,
 } DefaultScreen;
 

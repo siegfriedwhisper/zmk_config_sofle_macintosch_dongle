@@ -70,7 +70,7 @@ static uint16_t wpm_font_color;
 static uint16_t wpm_font_1_color;
 static uint16_t wpm_font_bg_color;
 
-static DefaultScreen default_screen = SNAKE_SCREEN;
+static DefaultScreen default_screen = STATUS_SCREEN;
 
 static InfoSlot left_slot;
 static InfoSlot right_slot;

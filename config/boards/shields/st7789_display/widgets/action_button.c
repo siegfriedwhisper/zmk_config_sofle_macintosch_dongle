@@ -24,7 +24,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/display.h>
 
 #include "action_button.h"
-#include "snake.h"
 #include "output_status.h"
 #include "battery_status.h"
 #include "layer_status.h"
@@ -33,8 +32,6 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "helpers/settings.h"
 #include "theme.h"
 #include "wpm.h"
-// #include "snake_image.h"
-#include "logo.h"
 #include "bagua.h"
 #include <stdint.h>
 
@@ -105,10 +102,8 @@ void toggle_menu() {
         stop_battery_status();
         stop_bagua();
         stop_layer_status();
-        start_snake();
         menu_on = false;
     } else {
-        stop_snake();
         print_menu();
         menu_on = true;
     }
@@ -123,11 +118,6 @@ void change_theme() {
 #endif
     if (menu_on) {
         print_menu();
-        apply_theme_snake();
-    } else {
-        stop_snake();
-        apply_theme_snake();
-        start_snake();
     }
 }
 
