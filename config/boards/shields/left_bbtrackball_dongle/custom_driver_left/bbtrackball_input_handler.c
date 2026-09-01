@@ -82,6 +82,10 @@ static int dy_acc = 0;
 static uint32_t last_move_time = 0;
 static uint32_t last_arrow_trigger = 0;
 
+/* 滚轮余量：一次只发 1 档，剩余暂存下次继续发 */
+static int wheel_residue_x = 0;
+static int wheel_residue_y = 0;
+
 typedef struct {
     const struct device *gpio_dev;
     int pin;
@@ -206,7 +210,7 @@ static void bbtrackball_work_handler(struct k_work *work) {
     dx_acc = 0;
     dy_acc = 0;
 
-    if (dx == 0 && dy == 0) {
+    if (dx == 0 && dy == 0 && wheel_residue_x == 0 && wheel_residue_y == 0) {
         return;
     }
 
@@ -246,8 +250,30 @@ static void bbtrackball_work_handler(struct k_work *work) {
         return;
     }
 
-    input_report_rel(dev, INPUT_REL_HWHEEL, -dx, false, K_NO_WAIT);
-    input_report_rel(dev, INPUT_REL_WHEEL, dy, true, K_NO_WAIT);
+    /* 滚轮模式：每次只发 1 档，余量留 residue 下次继续 */
+    wheel_residue_x += dx;
+    wheel_residue_y += dy;
+
+    if (wheel_residue_x > 0) {
+        input_report_rel(dev, INPUT_REL_HWHEEL, -1, false, K_NO_WAIT);
+        wheel_residue_x--;
+    } else if (wheel_residue_x < 0) {
+        input_report_rel(dev, INPUT_REL_HWHEEL, 1, false, K_NO_WAIT);
+        wheel_residue_x++;
+    }
+
+    if (wheel_residue_y > 0) {
+        input_report_rel(dev, INPUT_REL_WHEEL, 1, true, K_NO_WAIT);
+        wheel_residue_y--;
+    } else if (wheel_residue_y < 0) {
+        input_report_rel(dev, INPUT_REL_WHEEL, -1, true, K_NO_WAIT);
+        wheel_residue_y++;
+    }
+
+    /* 若还有余量且无新中断 pending，主动再调度继续消化 */
+    if ((wheel_residue_x != 0 || wheel_residue_y != 0) && !k_work_is_pending(&data->work)) {
+        k_work_submit_to_queue(&bbtrackball_work_q, &data->work);
+    }
     
 }
 
