@@ -18,8 +18,6 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include <zmk/hid.h>
-#include <zmk/events/hid_indicators_changed.h>
 #include <zmk/events/position_state_changed.h>
 
 LOG_MODULE_REGISTER(bbtrackball_input_handler, LOG_LEVEL_INF);
@@ -54,8 +52,6 @@ static struct k_work_q bbtrackball_work_q;
 #define EXPONENTIAL_BASE 1.12f
 #define SPEED_SCALE 60.0f
 
-#define MOVE_IDLE_TIMEOUT 30
-
 #define ARROW_TRIGGER_THRESHOLD 4
 #define ARROW_REPEAT_MS 35
 
@@ -63,7 +59,6 @@ static struct k_work_q bbtrackball_work_q;
  * Runtime State
  * ========================================================= */
 
-static bool moved = false;
 static bool space_pressed = false;
 static bool arrow_key_pressed = false;
 
@@ -72,18 +67,6 @@ static int dy_acc = 0;
 
 static uint32_t last_move_time = 0;
 static uint32_t last_arrow_trigger = 0;
-
-/* =========================================================
- * HID indicators
- * ========================================================= */
-
-static zmk_hid_indicators_t current_indicators;
-
-#define HID_INDICATORS_CAPS_LOCK (1 << 1)
-
-/* =========================================================
- * GPIO Input Description
- * ========================================================= */
 
 typedef struct {
     const struct device *gpio_dev;
@@ -121,21 +104,6 @@ struct bbtrackball_data {
     struct k_work work;
     struct bb_gpio_cb gpio_cbs[ARRAY_SIZE(dir_inputs)];
 };
-
-/* =========================================================
- * HID indicator listener
- * ========================================================= */
-
-static int hid_indicators_listener(const zmk_event_t *eh) {
-    const struct zmk_hid_indicators_changed *ev = as_zmk_hid_indicators_changed(eh);
-    if (ev) {
-        current_indicators = ev->indicators;
-    }
-    return ZMK_EV_EVENT_BUBBLE;
-}
-
-ZMK_LISTENER(a320_hid_listener, hid_indicators_listener);
-ZMK_SUBSCRIPTION(a320_hid_listener, zmk_hid_indicators_changed);
 
 /* ========================================================= */
 
@@ -227,16 +195,10 @@ static void bbtrackball_work_handler(struct k_work *work) {
     dy_acc = 0;
 
     if (dx == 0 && dy == 0) {
-        if (now - last_move_time > MOVE_IDLE_TIMEOUT) {
-            moved = false;
-        }
         return;
     }
 
     last_move_time = now;
-    moved = true;
-
-    bool capslock = current_indicators & HID_INDICATORS_CAPS_LOCK;
 
     if (arrow_key_pressed) {
 
@@ -266,7 +228,7 @@ static void bbtrackball_work_handler(struct k_work *work) {
         return;
     }
 
-    if (space_pressed || capslock) {
+    if (space_pressed) {
         input_report_rel(dev, INPUT_REL_X, -dx, false, K_NO_WAIT);
         input_report_rel(dev, INPUT_REL_Y, -dy, true, K_NO_WAIT);
         return;
