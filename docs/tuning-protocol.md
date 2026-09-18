@@ -155,6 +155,27 @@ static const STRUCT_SECTION_ITERABLE(zmk_behavior_ref, zmk_behavior_tune_ref) = 
 
 ⇒ 两半断电、重启、重刷固件、`settings_reset` 都不影响手感，连上即自动恢复。
 
+## 构建配置的坑（2026-09-18 实测）
+
+ZMK 的 `post_boards_shields.cmake` 对 board 与 shield 的 conf 走**两条不同路径**：
+
+| 类型 | 生效位置 | 搜索的候选 |
+|---|---|---|
+| **board** | `config/<board>.conf`（**config 根**） | `${ZMK_CONFIG}/${BOARD_DIR_NAME}.conf`、`${ZMK_CONFIG}/${BOARD}.conf` |
+| **shield** | `config/boards/shields/<shield>/<shield>.conf` | Zephyr 原生 shield 机制（`${SHIELD_DIR}/${shield}.conf`） |
+
+⚠️ **`config/boards/arm/<board>/<board>.conf` 不会被加载**（该目录下只有 `_defconfig`、
+`.dts`、`.keymap` 有效）。
+
+本次踩坑：dongle 的 `CONFIG_USB_CDC_ACM=y` 写进了 board 目录 ⇒ 未生效 ⇒
+`DEVICE_DT_GET(DT_NODELABEL(cdc_acm_uart))` **链接失败**
+（`undefined reference to __device_dts_ord_156`；用 `device_get_binding()` 则会被推迟到
+运行时静默失败，更隐蔽）。
+
+⚠️ **`BOARD_DIR_NAME` 的连带效应**：`sofle_dongle_left` / `sofle_dongle_right` 的 `BOARD_DIR`
+都是 `config/boards/arm/sofle_dongle/` ⇒ `BOARD_DIR_NAME` = `sofle_dongle` ⇒
+**`config/sofle_dongle.conf` 对三个 board target 都会生效**（放置配置时要意识到这点）。
+
 ## 落地清单
 
 - [x] 右手：15 个参数从 Kconfig/硬编码迁到运行时 `g_tp_params`（宏名不变，调用点零改动）
