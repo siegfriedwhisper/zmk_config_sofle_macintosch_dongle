@@ -47,3 +47,16 @@ void trackball_config_rebuild_lut(void);
 
 /** 保存当前参数到 flash（settings 持久化） */
 int trackball_params_save(void);
+
+/* =========================================================
+ * 接收器（dongle）下发通道 —— 见 docs/tuning-protocol.md
+ * ========================================================= */
+
+/** 恢复默认参数（只改内存；接收器是权威源，不落盘） */
+void trackball_params_reset(void);
+
+/**
+ * 按参数 ID 写入一个参数（0x01–0x3F 为左手段）。
+ * @return 0 = 已应用；-1 = 非本半 ID 或值越界
+ */
+int trackball_param_apply(uint8_t id, uint32_t value);

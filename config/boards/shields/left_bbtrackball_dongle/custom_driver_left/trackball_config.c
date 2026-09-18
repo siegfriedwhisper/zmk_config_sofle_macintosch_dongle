@@ -186,6 +186,41 @@ static const struct param_entry param_table[] = {
     {"base_move_pixels", set_base},
 };
 
+/* =========================================================
+ * 接收器（dongle）下发通道：按 ID 写参数
+ *   复用上面的 setter（含范围校验），把数值转成字符串喂给它
+ * ========================================================= */
+static int apply_num(setter_fn fn, uint32_t value) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u", (unsigned)value);
+    return fn(buf) == 0 ? 0 : -1;
+}
+
+void trackball_params_reset(void) {
+    g_params = (trackball_params_t)TRACKBALL_PARAMS_DEFAULT;
+    trackball_config_rebuild_lut();
+}
+
+int trackball_param_apply(uint8_t id, uint32_t value) {
+    switch (id) {
+    case 0x01:
+        return apply_num(set_sens, value);
+    case 0x02:
+        return apply_num(set_wheel, value);
+    case 0x03:
+        return apply_num(set_arrow_threshold, value);
+    case 0x04:
+        return apply_num(set_arrow_repeat, value);
+    case 0x05:
+        return apply_num(set_active, value);
+    case 0x06:
+        return apply_num(set_base, value);
+    default:
+        /* 不属于左手段（0x01–0x3F），静默忽略 */
+        return -1;
+    }
+}
+
 static void cmd_set(char *args) {
     /* 解析 "key value" */
     char *key = strtok(args, " \r\n");

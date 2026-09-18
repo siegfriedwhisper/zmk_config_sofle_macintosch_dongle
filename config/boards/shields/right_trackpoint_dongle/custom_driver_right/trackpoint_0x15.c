@@ -25,6 +25,7 @@
 #include <zmk/hid.h>
 
 #include "custom_led.h"
+#include "trackpoint_config.h"
 
 LOG_MODULE_REGISTER(trackpoint, LOG_LEVEL_DBG);
 
@@ -39,33 +40,40 @@ K_THREAD_STACK_DEFINE(tp_workq_stack, TP_WORKQ_STACK_SIZE);
 static struct k_work_q tp_workq;
 
 /* ========================================================================= */
-/* 鼠标与滚轮可调参数 (已映射至 Kconfig，用户可在 .conf 中配置)                 */
+/* 鼠标与滚轮可调参数 —— 运行时变量驱动                                        */
+/*                                                                           */
+/* 原为 Kconfig 编译期常量，现改为读 g_tp_params（由接收器实时下发）。          */
+/* Kconfig 值降级为"出厂默认"，见 trackpoint_config.h。协议见                  */
+/* docs/tuning-protocol.md。使用点保持原宏名不变 ⇒ 调用处零改动。              */
 /* ========================================================================= */
 
 // --- 滚轮方向配置 ---
-#define SCROLL_X_DIR (-CONFIG_TRACKPOINT_SCROLL_X_DIR)
-#define SCROLL_Y_DIR CONFIG_TRACKPOINT_SCROLL_Y_DIR
+#define SCROLL_X_DIR (-(g_tp_params.scroll_x_dir))
+#define SCROLL_Y_DIR (g_tp_params.scroll_y_dir)
 
 // --- 滚轮灵敏度与粒度配置 ---
-#define SCROLL_DEADZONE CONFIG_TRACKPOINT_SCROLL_DEADZONE
-#define SCROLL_INPUT_MAX CONFIG_TRACKPOINT_SCROLL_INPUT_MAX
-#define SCROLL_DIVISOR_SLOW CONFIG_TRACKPOINT_SCROLL_DIVISOR_SLOW
-#define SCROLL_DIVISOR_FAST CONFIG_TRACKPOINT_SCROLL_DIVISOR_FAST
+#define SCROLL_DEADZONE (g_tp_params.scroll_deadzone)
+#define SCROLL_INPUT_MAX (g_tp_params.scroll_input_max)
+#define SCROLL_DIVISOR_SLOW (g_tp_params.scroll_divisor_slow)
+#define SCROLL_DIVISOR_FAST (g_tp_params.scroll_divisor_fast)
 
 // --- Arrow key threshold / divisor ---
-#define ARROW_DEADZONE CONFIG_TRACKPOINT_SCROLL_DEADZONE
+#define ARROW_DEADZONE (g_tp_params.scroll_deadzone)
 #define ARROW_INPUT_MAX 256
-#define ARROW_DIVISOR_SLOW CONFIG_TRACKPOINT_SCROLL_DIVISOR_SLOW
-#define ARROW_DIVISOR_FAST CONFIG_TRACKPOINT_SCROLL_DIVISOR_FAST
+#define ARROW_DIVISOR_SLOW (g_tp_params.scroll_divisor_slow)
+#define ARROW_DIVISOR_FAST (g_tp_params.scroll_divisor_fast)
 
 // --- 防误触锁定比例配置 ---
-#define DOMINANT_NUMERATOR CONFIG_TRACKPOINT_DOMINANT_NUMERATOR
-#define DOMINANT_DENOMINATOR CONFIG_TRACKPOINT_DOMINANT_DENOMINATOR
+#define DOMINANT_NUMERATOR (g_tp_params.dominant_num)
+#define DOMINANT_DENOMINATOR (g_tp_params.dominant_den)
 
-// --- 鼠标指针基础配置 (Kconfig 为整数百分比，这里除以 100 转为浮点数) ---
-#define MOUSE_BASE_SPEED (CONFIG_TRACKPOINT_MOUSE_BASE_SPEED_PERCENT / 100.0f)
-#define MOUSE_SENS_BASE (CONFIG_TRACKPOINT_MOUSE_SENS_BASE_PERCENT / 100.0f)
-#define MOUSE_SENS_STEP (CONFIG_TRACKPOINT_MOUSE_SENS_STEP_PERCENT / 100.0f)
+// --- 鼠标指针基础配置（参数为整数百分比，这里除以 100 转为浮点数）---
+#define MOUSE_BASE_SPEED (g_tp_params.mouse_base_speed / 100.0f)
+#define MOUSE_SENS_BASE (g_tp_params.mouse_sens_base / 100.0f)
+#define MOUSE_SENS_STEP (g_tp_params.mouse_sens_step / 100.0f)
+
+// --- 指数加速曲线上限（原硬编码 TP_MAX_MULT 2.0f）---
+#define TP_MAX_MULT (g_tp_params.exp_max_mult / 100.0f)
 
 /* ========= Motion GPIO ========= */
 
@@ -78,7 +86,7 @@ static struct k_work_q tp_workq;
 #define TRACKPOINT_PACKET_LEN 7
 #define TRACKPOINT_MAGIC_BYTE0 0x50
 
-#define SLOW_KEY_MULTIPLIER 0.5f
+#define SLOW_KEY_MULTIPLIER (g_tp_params.slow_key_mult / 100.0f)
 
 /* ========= Watch Dog ========= */
 static uint32_t last_activity_time = 0;
@@ -152,10 +160,11 @@ struct trackpoint_data {
     int16_t arrow_residue_y;
 };
 
-/* ========= 指数加速计算 ========= */
-#ifdef CONFIG_TRACKPOINT_EXPONENTIAL
-#define TP_MAX_MULT 2.0f
+/* ========= 指数加速计算（斜率/上限/开关均可运行时调）========= */
 static inline float trackpoint_exponential_factor(int8_t dx, int8_t dy, uint32_t delta_ms) {
+    if (!g_tp_params.exponential)
+        return 1.0f;
+
     if (delta_ms == 0)
         delta_ms = 1;
 
@@ -164,11 +173,10 @@ static inline float trackpoint_exponential_factor(int8_t dx, int8_t dy, uint32_t
         return 1.0f;
 
     float speed = (float)dist / (float)delta_ms;
-    float mult = expf(speed * 1.307357f);
+    float mult = expf(speed * (float)g_tp_params.exp_slope / 1000.0f);
 
     return (mult > TP_MAX_MULT) ? TP_MAX_MULT : mult;
 }
-#endif
 
 /* ========= 读取数据 ========= */
 static int trackpoint_read_packet(const struct device *dev, int8_t *dx, int8_t *dy) {
@@ -365,12 +373,8 @@ static void trackpoint_work_cb(struct k_work *work) {
         uint8_t tp_led_brt = custom_led_get_last_valid_brightness();
         float tp_factor = MOUSE_SENS_BASE + MOUSE_SENS_STEP * tp_led_brt;
 
-#ifdef CONFIG_TRACKPOINT_EXPONENTIAL
         uint32_t delta = now - data->last_packet_time;
         float exp_mult = trackpoint_exponential_factor(dx, dy, delta);
-#else
-        float exp_mult = 1.0f;
-#endif
 
         float slow_mult = slow_key_pressed ? SLOW_KEY_MULTIPLIER : 1.0f;
 

@@ -1,5 +1,7 @@
 zephyr_library()
 zephyr_library_sources(custom_driver_right/custom_led.c)
+zephyr_library_sources(custom_driver_right/trackpoint_config.c)
+zephyr_library_sources(custom_driver_right/tune_behavior.c)
 zephyr_library_sources(custom_driver_right/trackpoint_0x15.c)
 zephyr_library_include_directories(${ZEPHYR_BASE}/drivers)
 zephyr_library_include_directories(../../../include)
