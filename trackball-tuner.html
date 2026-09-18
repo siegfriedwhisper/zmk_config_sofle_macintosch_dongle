@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轨迹球调参器 · Trackball Tuner</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #1a2233;
+    --border: #2a3550;
+    --text: #e6e9f0;
+    --dim: #8b95a7;
+    --accent: #4f8cff;
+    --accent2: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 22px; font-weight: 600; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .grow { flex: 1; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; cursor: pointer; font-weight: 500;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.secondary { background: #2a3550; }
+  button.green { background: var(--accent2); color: #052e1f; }
+  button.warn { background: var(--warn); color: #3b2a00; }
+  #status {
+    font-size: 13px; padding: 6px 12px; border-radius: 20px;
+    background: #26303f; color: var(--dim);
+  }
+  #status.online { background: #0c3323; color: var(--accent2); }
+  #status.error { background: #3f1420; color: var(--err); }
+  .param { margin-bottom: 14px; }
+  .param-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+  .param-name { font-size: 14px; font-weight: 500; }
+  .param-desc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .param-value {
+    font-size: 15px; font-weight: 600; color: var(--accent);
+    background: #0b1220; padding: 2px 10px; border-radius: 6px; font-variant-numeric: tabular-nums;
+  }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent); height: 6px; cursor: pointer;
+  }
+  .actions { display: flex; gap: 10px; margin-top: 6px; }
+  .log {
+    background: #0b1220; border: 1px solid var(--border); border-radius: 8px;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+    color: var(--dim); height: 140px; overflow-y: auto; padding: 10px; margin-top: 12px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log .recv { color: var(--accent2); }
+  .log .send { color: var(--accent); }
+  .log .err { color: var(--err); }
+  .tip {
+    font-size: 12px; color: var(--dim); line-height: 1.6; margin-top: 12px;
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .banner {
+    background: #2a2408; border: 1px solid #4d400f; color: var(--warn);
+    border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 16px; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>🎯 轨迹球调参器</h1>
+      <div class="sub">左半区 · bbtrackball · 通过 USB 串口实时调参，无需刷固件</div>
+    </div>
+    <span id="status">未连接</span>
+  </header>
+
+  <div class="banner" id="banner">
+    ⚠️ <b>用法</b>：用 USB 线连接左手轨迹球半区到电脑 → 点「连接串口」选择设备（通常显示为 <code>CDC ACM</code> 或 <code>USB Serial</code>）→ 拖动滑条实时生效 → 点「保存到键盘」固化。需 Chrome / Edge 浏览器。
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="btnConnect" class="grow">🔌 连接串口</button>
+      <button id="btnRefresh" class="secondary" disabled>↻ 读取当前参数</button>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button id="btnSave" class="green" disabled>💾 保存到键盘</button>
+      <button id="btnReset" class="warn" disabled>♻ 恢复默认</button>
+      <button id="btnDisconnect" class="secondary" disabled>断开</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="card" id="paramsCard" style="display:none">
+    <!-- 参数滑条由 JS 生成 -->
+  </div>
+
+  <div class="tip">
+    <b>参数说明</b><br>
+    · <b>灵敏度</b>：整体加速强度缩放（100% = 出厂手感）<br>
+    · <b>滚轮单次档数</b>：每次滚轮发几档（1 = 精细，越大滚越快）<br>
+    · <b>方向键阈值</b>：多大位移才触发方向键<br>
+    · <b>方向键重复间隔</b>：方向键触发的最小间隔（ms）<br>
+    · <b>移动判定窗</b>：多久内算"正在移动"（ms），影响 LED 点亮时长<br>
+    · <b>查表兜底</b>：滚得慢时的基础像素（delta≥45ms 用此值）<br><br>
+    所有改动即时生效；「保存到键盘」才写入 flash，断电重启后仍保留。
+  </div>
+</div>
+
+<script>
+/* ============ 参数定义 ============ */
+const PARAMS = [
+  { key: 'sens',           name: '灵敏度',           min: 50,  max: 150, step: 5,  unit: '%',   desc: '查表加速强度缩放（100 = 出厂手感）' },
+  { key: 'wheel',          name: '滚轮单次档数',     min: 1,   max: 16,  step: 1,  unit: '档',  desc: '每次滚轮发送的档数' },
+  { key: 'arrow_threshold',name: '方向键阈值',       min: 1,   max: 32,  step: 1,  unit: '',    desc: '多大位移触发方向键' },
+  { key: 'arrow_repeat_ms',name: '方向键重复间隔',   min: 10,  max: 500, step: 5,  unit: 'ms',  desc: '方向键触发最小间隔' },
+  { key: 'active_ms',      name: '移动判定窗',       min: 10,  max: 1000,step: 10, unit: 'ms',  desc: '多久内算正在移动（LED 点亮时长）' },
+  { key: 'base_move_pixels', name: '查表兜底',       min: 1,   max: 64,  step: 1,  unit: 'px',  desc: '滚得慢时的基础像素' },
+];
+
+/* ============ 状态 ============ */
+let port = null;
+let reader = null;
+let writer = null;
+let connected = false;
+let pending = [];          // 待发送命令队列
+let readingLine = '';
+
+const $ = (id) => document.getElementById(id);
+
+/* ============ 日志 ============ */
+function log(msg, cls = '') {
+  const el = $('log');
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = msg + '\n';
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ============ 状态 UI ============ */
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = cls || '';
+}
+function setConnected(on) {
+  connected = on;
+  $('btnConnect').disabled = on;
+  $('btnRefresh').disabled = !on;
+  $('btnSave').disabled = !on;
+  $('btnReset').disabled = !on;
+  $('btnDisconnect').disabled = !on;
+  $('paramsCard').style.display = on ? '' : 'none';
+}
+
+/* ============ 串口读写 ============ */
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+    setStatus('已连接', 'online');
+    log('已连接串口，等待固件握手...', 'send');
+    setConnected(true);
+    startReadLoop();
+    // 等固件 banner，再读参数
+    setTimeout(() => sendCmd('GET'), 800);
+  } catch (e) {
+    if (e.name === 'NotFoundError') return;  // 用户取消
+    setStatus('连接失败', 'error');
+    log('连接失败: ' + e.message, 'err');
+  }
+}
+
+async function startReadLoop() {
+  const dec = new TextDecoder();
+  try {
+    while (connected) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      readingLine += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = readingLine.indexOf('\n')) >= 0) {
+        const line = readingLine.slice(0, idx).replace(/\r$/, '');
+        readingLine = readingLine.slice(idx + 1);
+        if (line.trim()) handleLine(line.trim());
+      }
+    }
+  } catch (e) {
+    log('串口读错误: ' + e.message, 'err');
+  }
+}
+
+function handleLine(line) {
+  log('← ' + line, 'recv');
+  if (line === 'OK') { return; }
+  if (line.startsWith('ERR')) { log('⚠ ' + line, 'err'); return; }
+  if (line.includes('=')) {
+    const [k, v] = line.split('=');
+    const p = PARAMS.find(x => x.key === k);
+    if (p && !isNaN(parseFloat(v))) {
+      p.value = parseFloat(v);
+      updateSliderUI(p);
+    }
+  }
+}
+
+async function sendCmd(cmd) {
+  if (!writer) return;
+  log('→ ' + cmd, 'send');
+  try {
+    const data = new TextEncoder().encode(cmd + '\r\n');
+    await writer.write(data);
+  } catch (e) {
+    log('发送失败: ' + e.message, 'err');
+  }
+}
+
+/* ============ 参数 UI ============ */
+function buildParamsUI() {
+  const card = $('paramsCard');
+  card.innerHTML = '';
+  PARAMS.forEach(p => {
+    p.value = p.value ?? p.min;
+    const wrap = document.createElement('div');
+    wrap.className = 'param';
+
+    const head = document.createElement('div');
+    head.className = 'param-head';
+    const left = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'param-name';
+    name.textContent = p.name;
+    const desc = document.createElement('div');
+    desc.className = 'param-desc';
+    desc.textContent = p.desc;
+    left.appendChild(name); left.appendChild(desc);
+    const val = document.createElement('span');
+    val.className = 'param-value';
+    val.id = 'val-' + p.key;
+    head.appendChild(left); head.appendChild(val);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = p.min; slider.max = p.max; slider.step = p.step;
+    slider.value = p.value;
+    let timer = null;
+    slider.addEventListener('input', () => {
+      p.value = parseInt(slider.value);
+      updateSliderUI(p);
+      clearTimeout(timer);
+      timer = setTimeout(() => sendCmd(`SET ${p.key} ${p.value}`), 150);  // 防抖
+    });
+
+    wrap.appendChild(head);
+    wrap.appendChild(slider);
+    card.appendChild(wrap);
+  });
+}
+
+function updateSliderUI(p) {
+  const el = $('val-' + p.key);
+  if (el) el.textContent = p.value + (p.unit ? ' ' + p.unit : '');
+}
+
+/* ============ 事件 ============ */
+$('btnConnect').addEventListener('click', connect);
+$('btnRefresh').addEventListener('click', () => sendCmd('GET'));
+$('btnSave').addEventListener('click', () => sendCmd('SAVE'));
+$('btnReset').addEventListener('click', () => {
+  sendCmd('RESET');
+  setTimeout(() => sendCmd('GET'), 500);
+});
+$('btnDisconnect').addEventListener('click', async () => {
+  try { if (reader) await reader.cancel(); } catch (e) {}
+  try { if (port) await port.close(); } catch (e) {}
+  reader = null; writer = null; port = null;
+  setConnected(false);
+  setStatus('未连接');
+  log('已断开');
+});
+
+/* ============ 初始化 ============ */
+buildParamsUI();
+
+/* Web Serial 支持检查 */
+if (!('serial' in navigator)) {
+  setStatus('浏览器不支持', 'error');
+  log('此浏览器不支持 Web Serial（需 Chrome/Edge 89+）。', 'err');
+  $('btnConnect').disabled = true;
+}
+</script>
+</body>
+</html>

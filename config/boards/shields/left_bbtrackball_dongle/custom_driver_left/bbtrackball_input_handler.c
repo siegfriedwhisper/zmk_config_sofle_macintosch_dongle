@@ -19,6 +19,8 @@
 
 #include <zmk/events/position_state_changed.h>
 
+#include "trackball_config.h"
+
 LOG_MODULE_REGISTER(bbtrackball_input_handler, LOG_LEVEL_INF);
 
 /* =========================================================
@@ -47,27 +49,11 @@ static struct k_work_q bbtrackball_work_q;
  * Config
  * ========================================================= */
 
-#define BASE_MOVE_PIXELS 3
-#define ARROW_TRIGGER_THRESHOLD 4
-#define ARROW_REPEAT_MS 35
-
-/* keymap 中对应按键的位置号 */
+/* keymap 中对应按键的位置号（非运行时参数，保持宏） */
 #define ARROW_KEY_POSITION 32
 #define SPACE_KEY_POSITION 61
-/* 视为"正在移动"的时间窗（ms） */
-#define TRACKBALL_ACTIVE_MS 40
 
-/* 查表：delta(ms) -> delta_px，delta 超出表范围时兜底 BASE_MOVE_PIXELS */
-#define SPEED_LUT_SIZE 45
-static const uint16_t speed_lut[SPEED_LUT_SIZE] = {
-    /* delta=0 占位（实际不会被访问） */
-    0,
-    /* 1-44 */
-    2693, 90, 29, 16, 12, 9, 8, 7, 6, 6, 6, 5,
-    5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4,
-    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-    4, 4, 4, 4, 4, 4, 4, 4,
-};
+/* 查表与运行时参数在 trackball_config.h/c 中定义 */
 
 /* =========================================================
  * Runtime State
@@ -125,7 +111,7 @@ struct bbtrackball_data {
 
 /* ========================================================= */
 
-bool trackball_is_active(void) { return (k_uptime_get_32() - last_move_time) < TRACKBALL_ACTIVE_MS; }
+bool trackball_is_active(void) { return (k_uptime_get_32() - last_move_time) < g_params.active_ms; }
 
 /* =========================================================
  * Position listener
@@ -175,7 +161,8 @@ static void dir_edge_cb(const struct device *dev, struct gpio_callback *cb, uint
                 if (delta == 0)
                     delta = 1;
 
-                int delta_px = (delta < SPEED_LUT_SIZE) ? speed_lut[delta] : BASE_MOVE_PIXELS;
+                int delta_px = (delta < SPEED_LUT_SIZE) ? g_speed_lut_eff[delta]
+                                                        : g_params.base_move_pixels;
 
                 if (i < 2)
                     dx_acc += d->sign * delta_px;
@@ -221,11 +208,11 @@ static void bbtrackball_work_handler(struct k_work *work) {
         int abs_dx = abs(dx);
         int abs_dy = abs(dy);
 
-        if (abs_dx < ARROW_TRIGGER_THRESHOLD && abs_dy < ARROW_TRIGGER_THRESHOLD) {
+        if (abs_dx < g_params.arrow_threshold && abs_dy < g_params.arrow_threshold) {
             return;
         }
 
-        if (now - last_arrow_trigger < ARROW_REPEAT_MS) {
+        if (now - last_arrow_trigger < g_params.arrow_repeat_ms) {
             return;
         }
 
@@ -250,24 +237,30 @@ static void bbtrackball_work_handler(struct k_work *work) {
         return;
     }
 
-    /* 滚轮模式：每次只发 1 档，余量留 residue 下次继续 */
+    /* 滚轮模式：每次至多发 wheel_units 档，余量留 residue 下次继续 */
     wheel_residue_x += dx;
     wheel_residue_y += dy;
 
+    int units = g_params.wheel_units;
+
     if (wheel_residue_x > 0) {
-        input_report_rel(dev, INPUT_REL_HWHEEL, -1, false, K_NO_WAIT);
-        wheel_residue_x--;
+        int n = (wheel_residue_x > units) ? units : wheel_residue_x;
+        input_report_rel(dev, INPUT_REL_HWHEEL, -n, false, K_NO_WAIT);
+        wheel_residue_x -= n;
     } else if (wheel_residue_x < 0) {
-        input_report_rel(dev, INPUT_REL_HWHEEL, 1, false, K_NO_WAIT);
-        wheel_residue_x++;
+        int n = (-wheel_residue_x > units) ? units : -wheel_residue_x;
+        input_report_rel(dev, INPUT_REL_HWHEEL, n, false, K_NO_WAIT);
+        wheel_residue_x += n;
     }
 
     if (wheel_residue_y > 0) {
-        input_report_rel(dev, INPUT_REL_WHEEL, 1, true, K_NO_WAIT);
-        wheel_residue_y--;
+        int n = (wheel_residue_y > units) ? units : wheel_residue_y;
+        input_report_rel(dev, INPUT_REL_WHEEL, n, true, K_NO_WAIT);
+        wheel_residue_y -= n;
     } else if (wheel_residue_y < 0) {
-        input_report_rel(dev, INPUT_REL_WHEEL, -1, true, K_NO_WAIT);
-        wheel_residue_y++;
+        int n = (-wheel_residue_y > units) ? units : -wheel_residue_y;
+        input_report_rel(dev, INPUT_REL_WHEEL, -n, true, K_NO_WAIT);
+        wheel_residue_y += n;
     }
 
     /* 若还有余量且无新中断 pending，主动再调度继续消化 */
