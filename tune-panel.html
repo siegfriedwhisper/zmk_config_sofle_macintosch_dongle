@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手感调参台 · Sofle Dongle Tuner</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #1a2233;
+    --border: #2a3550;
+    --text: #e6e9f0;
+    --dim: #8b95a7;
+    --accent: #4f8cff;
+    --accent2: #34d399;
+    --accent3: #c084fc;
+    --warn: #fbbf24;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 22px; font-weight: 600; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 15px; font-weight: 600; margin-bottom: 16px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .tag {
+    font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 10px;
+    background: #0b1220; color: var(--dim); letter-spacing: .5px;
+  }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .grow { flex: 1; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; cursor: pointer; font-weight: 500;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.secondary { background: #2a3550; }
+  button.green { background: var(--accent2); color: #052e1f; }
+  button.purple { background: var(--accent3); color: #2a0b3d; }
+  button.warn { background: var(--warn); color: #3b2a00; }
+  #status {
+    font-size: 13px; padding: 6px 12px; border-radius: 20px;
+    background: #26303f; color: var(--dim);
+  }
+  #status.online { background: #0c3323; color: var(--accent2); }
+  #status.error { background: #3f1420; color: var(--err); }
+  .param { margin-bottom: 14px; }
+  .param-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+  .param-name { font-size: 14px; font-weight: 500; }
+  .param-desc { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .param-value {
+    font-size: 15px; font-weight: 600; color: var(--accent);
+    background: #0b1220; padding: 2px 10px; border-radius: 6px; font-variant-numeric: tabular-nums;
+    min-width: 68px; text-align: right;
+  }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent); height: 6px; cursor: pointer;
+  }
+  .actions { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+  .log {
+    background: #0b1220; border: 1px solid var(--border); border-radius: 8px;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+    color: var(--dim); height: 150px; overflow-y: auto; padding: 10px; margin-top: 12px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log .recv { color: var(--accent2); }
+  .log .send { color: var(--accent); }
+  .log .err { color: var(--err); }
+  .tip {
+    font-size: 12px; color: var(--dim); line-height: 1.7; margin-top: 12px;
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .tip code { background: #0b1220; padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+  .banner {
+    background: #0a2033; border: 1px solid #17466b; color: #9ccaf5;
+    border-radius: 10px; padding: 12px 16px; font-size: 13px; margin-bottom: 16px; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>🎛 手感调参台</h1>
+      <div class="sub">接收器（dongle）· 一次连接同时调左右两半，实时生效、无需刷固件</div>
+    </div>
+    <span id="status">未连接</span>
+  </header>
+
+  <div class="banner">
+    <b>用法</b>：USB 线连<b>接收器</b>（不是左右两半）→ 点「连接串口」→ 拖动滑条实时生效 →
+    点「保存到接收器」固化。参数由接收器通过无线下发到左右两半，两半不落盘、也不需再刷。<br>
+    需 Chrome / Edge（Web Serial）。
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="btnConnect" class="grow">🔌 连接串口</button>
+      <button id="btnRefresh" class="secondary" disabled>↻ 读取当前值</button>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button id="btnPush" class="purple" disabled>📤 重新下发到两半</button>
+      <button id="btnSave" class="green" disabled>💾 保存到接收器</button>
+      <button id="btnReset" class="warn" disabled>♻ 恢复默认</button>
+      <button id="btnDisconnect" class="secondary" disabled>断开</button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="card" id="group-left" style="display:none">
+    <h2>🖲 左手 · 轨迹球 <span class="tag">0x01–0x3F</span></h2>
+    <div class="body"></div>
+  </div>
+
+  <div class="card" id="group-right" style="display:none">
+    <h2>🔴 右手 · 小红点 TrackPoint <span class="tag">0x40–0x7F</span></h2>
+    <div class="body"></div>
+  </div>
+
+  <div class="tip">
+    <b>说明</b><br>
+    · 所有改动<b>即时生效</b>（拖滑条即下发），「保存到接收器」才写进接收器的 flash，断电后仍保留。<br>
+    · 左右两半断电/重启/重刷后，接收器会在它们连上时<b>自动把全表推回去</b>，手感不会丢。<br>
+    · 「重新下发到两半」用于排障：把接收器当前的全表再广播一次。<br>
+    · 方向类参数（<code>tp_scroll_x_dir</code> / <code>tp_scroll_y_dir</code>）取 <code>-1</code> 或 <code>1</code>。
+  </div>
+</div>
+
+<script>
+/* ============ 参数定义（ID 与接收器 tune_host.c 权威表一致）============ */
+const PARAMS = [
+  /* ---- 左手 · 轨迹球 ---- */
+  { id: '0x01', group: 'left',  key: 'sens',              name: '灵敏度',           min: 50,  max: 150,  step: 5,  unit: '%',  desc: '查表加速强度缩放（100 = 出厂手感）' },
+  { id: '0x02', group: 'left',  key: 'wheel',             name: '滚轮单次档数',     min: 1,   max: 16,   step: 1,  unit: '档', desc: '每次滚轮发送的档数' },
+  { id: '0x03', group: 'left',  key: 'arrow_threshold',   name: '方向键阈值',       min: 1,   max: 32,   step: 1,  unit: '',   desc: '多大位移触发方向键' },
+  { id: '0x04', group: 'left',  key: 'arrow_repeat_ms',   name: '方向键重复间隔',   min: 10,  max: 500,  step: 5,  unit: 'ms', desc: '方向键触发最小间隔' },
+  { id: '0x05', group: 'left',  key: 'active_ms',         name: '移动判定窗',       min: 10,  max: 1000, step: 10, unit: 'ms', desc: '多久内算正在移动（LED 点亮时长）' },
+  { id: '0x06', group: 'left',  key: 'base_move_pixels',  name: '查表兜底',         min: 1,   max: 64,   step: 1,  unit: 'px', desc: '滚得慢时的基础像素' },
+
+  /* ---- 右手 · TrackPoint ---- */
+  { id: '0x41', group: 'right', key: 'tp_base_speed',          name: '指针基础速度',     min: 1,   max: 300,  step: 1,  unit: '%',   desc: '整体指针速度基准' },
+  { id: '0x42', group: 'right', key: 'tp_sens_base',           name: '灵敏度基准',       min: 0,   max: 300,  step: 1,  unit: '%',   desc: '随 LED 亮度叠加的灵敏度起点' },
+  { id: '0x43', group: 'right', key: 'tp_sens_step',           name: '灵敏度档位增量',   min: 0,   max: 50,   step: 1,  unit: '%',   desc: '每一档 LED 亮度增加的灵敏度' },
+  { id: '0x44', group: 'right', key: 'tp_scroll_deadzone',     name: '滚轮死区',         min: 0,   max: 128,  step: 1,  unit: '',    desc: '小于此位移不当作滚动' },
+  { id: '0x45', group: 'right', key: 'tp_scroll_input_max',    name: '滚轮输入上限',     min: 1,   max: 1024, step: 1,  unit: '',    desc: '归一化用的最大位移' },
+  { id: '0x46', group: 'right', key: 'tp_scroll_divisor_slow', name: '滚轮慢速除数',     min: 1,   max: 1024, step: 1,  unit: '',    desc: '位移小（慢慢推）时的除数，越大越慢' },
+  { id: '0x47', group: 'right', key: 'tp_scroll_divisor_fast', name: '滚轮快速除数',     min: 1,   max: 1024, step: 1,  unit: '',    desc: '位移大（快速推）时的除数' },
+  { id: '0x48', group: 'right', key: 'tp_dominant_num',        name: '主轴判定分子',     min: 1,   max: 64,   step: 1,  unit: '',    desc: '防误触：主/次轴比值分子' },
+  { id: '0x49', group: 'right', key: 'tp_dominant_den',        name: '主轴判定分母',     min: 1,   max: 64,   step: 1,  unit: '',    desc: '防误触：主/次轴比值分母' },
+  { id: '0x4A', group: 'right', key: 'tp_scroll_x_dir',        name: '横向滚动方向',     min: -1,  max: 1,    step: 2,  unit: '',    desc: '1 = 正向，-1 = 反向' },
+  { id: '0x4B', group: 'right', key: 'tp_scroll_y_dir',        name: '纵向滚动方向',     min: -1,  max: 1,    step: 2,  unit: '',    desc: '1 = 正向，-1 = 反向' },
+  { id: '0x4C', group: 'right', key: 'tp_exponential',         name: '指数加速开关',     min: 0,   max: 1,    step: 1,  unit: '',    desc: '0 = 关闭（线性），1 = 开启' },
+  { id: '0x4D', group: 'right', key: 'tp_exp_slope',           name: '指数斜率',         min: 0,   max: 5000, step: 1,  unit: '×1e-3', desc: '越大加速越猛（1307 = 出厂）' },
+  { id: '0x4E', group: 'right', key: 'tp_exp_max_mult',        name: '加速倍率上限',     min: 50,  max: 1000, step: 10, unit: '×0.01', desc: '指数加速的封顶倍数（200 = 2.0×）' },
+  { id: '0x4F', group: 'right', key: 'tp_slow_key_mult',       name: '慢速键倍率',       min: 0,   max: 100,  step: 5,  unit: '×0.01', desc: '按住慢速键时的速度比例（50 = 半速）' },
+];
+
+/* ============ 状态 ============ */
+let port = null;
+let reader = null;
+let writer = null;
+let connected = false;
+let readingLine = '';
+
+const $ = (id) => document.getElementById(id);
+const byKey = (k) => PARAMS.find(x => x.key === k);
+
+/* ============ 日志 ============ */
+function log(msg, cls = '') {
+  const el = $('log');
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = msg + '\n';
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ============ 状态 UI ============ */
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = cls || '';
+}
+function setConnected(on) {
+  connected = on;
+  $('btnConnect').disabled = on;
+  ['btnRefresh', 'btnPush', 'btnSave', 'btnReset', 'btnDisconnect'].forEach(id => {
+    $(id).disabled = !on;
+  });
+  $('group-left').style.display = on ? '' : 'none';
+  $('group-right').style.display = on ? '' : 'none';
+}
+
+/* ============ 串口读写 ============ */
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+    setStatus('已连接', 'online');
+    log('已连接接收器', 'send');
+    setConnected(true);
+    startReadLoop();
+    // 连上后：先读权威表，再全表推一次到两半（保证三方一致）
+    setTimeout(() => sendCmd('GET'), 500);
+    setTimeout(() => sendCmd('SETALL'), 1000);
+  } catch (e) {
+    if (e.name === 'NotFoundError') return;  // 用户取消
+    setStatus('连接失败', 'error');
+    log('连接失败: ' + e.message, 'err');
+  }
+}
+
+async function startReadLoop() {
+  const dec = new TextDecoder();
+  try {
+    while (connected) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      readingLine += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = readingLine.indexOf('\n')) >= 0) {
+        const line = readingLine.slice(0, idx).replace(/\r$/, '');
+        readingLine = readingLine.slice(idx + 1);
+        if (line.trim()) handleLine(line.trim());
+      }
+    }
+  } catch (e) {
+    log('串口读错误: ' + e.message, 'err');
+  }
+}
+
+function handleLine(line) {
+  log('← ' + line, 'recv');
+  if (line === 'OK') return;
+  if (line.startsWith('ERR')) { log('⚠ ' + line, 'err'); return; }
+  if (line.includes('=')) {
+    const [k, v] = line.split('=');
+    const p = byKey(k.trim());
+    const n = parseFloat(v);
+    if (p && !isNaN(n)) {
+      p.value = n;
+      updateSliderUI(p);
+    }
+  }
+}
+
+async function sendCmd(cmd) {
+  if (!writer) return;
+  log('→ ' + cmd, 'send');
+  try {
+    await writer.write(new TextEncoder().encode(cmd + '\r\n'));
+  } catch (e) {
+    log('发送失败: ' + e.message, 'err');
+  }
+}
+
+/* ============ 参数 UI ============ */
+function buildGroup(group) {
+  const card = $('group-' + group);
+  const body = card.querySelector('.body');
+  body.innerHTML = '';
+
+  PARAMS.filter(p => p.group === group).forEach(p => {
+    if (p.value === undefined) p.value = p.min;   // 连接后 GET 会覆盖为接收器的真实值
+
+    const wrap = document.createElement('div');
+    wrap.className = 'param';
+
+    const head = document.createElement('div');
+    head.className = 'param-head';
+    const left = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'param-name';
+    name.textContent = p.name;
+    const desc = document.createElement('div');
+    desc.className = 'param-desc';
+    desc.textContent = p.desc;
+    left.appendChild(name); left.appendChild(desc);
+
+    const val = document.createElement('span');
+    val.className = 'param-value';
+    val.id = 'val-' + p.key;
+    head.appendChild(left); head.appendChild(val);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = p.min; slider.max = p.max; slider.step = p.step;
+    slider.value = p.value;
+    slider.id = 'slider-' + p.key;
+
+    let timer = null;
+    slider.addEventListener('input', () => {
+      p.value = parseInt(slider.value);
+      updateSliderUI(p);
+      clearTimeout(timer);
+      timer = setTimeout(() => sendCmd(`SET ${p.key} ${p.value}`), 150);  // 防抖
+    });
+
+    wrap.appendChild(head);
+    wrap.appendChild(slider);
+    body.appendChild(wrap);
+    updateSliderUI(p);
+  });
+}
+
+function updateSliderUI(p) {
+  const el = $('val-' + p.key);
+  if (el) el.textContent = p.value + (p.unit ? ' ' + p.unit : '');
+  const s = $('slider-' + p.key);
+  if (s && document.activeElement !== s) s.value = p.value;
+}
+
+/* ============ 事件 ============ */
+$('btnConnect').addEventListener('click', connect);
+$('btnRefresh').addEventListener('click', () => sendCmd('GET'));
+$('btnPush').addEventListener('click', () => sendCmd('SETALL'));
+$('btnSave').addEventListener('click', () => sendCmd('SAVE'));
+$('btnReset').addEventListener('click', () => {
+  sendCmd('RESET');
+  setTimeout(() => sendCmd('GET'), 800);   // RESET 会广播，稍后回读
+});
+$('btnDisconnect').addEventListener('click', async () => {
+  try { if (reader) await reader.cancel(); } catch (e) {}
+  try { if (port) await port.close(); } catch (e) {}
+  reader = null; writer = null; port = null;
+  setConnected(false);
+  setStatus('未连接');
+  log('已断开');
+});
+
+/* ============ 初始化 ============ */
+buildGroup('left');
+buildGroup('right');
+
+if (!('serial' in navigator)) {
+  setStatus('浏览器不支持', 'error');
+  log('此浏览器不支持 Web Serial（需 Chrome/Edge 89+）。', 'err');
+  $('btnConnect').disabled = true;
+}
+</script>
+</body>
+</html>

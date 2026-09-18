@@ -70,6 +70,9 @@ dongle 一律广播，每半只认自己那一段。
 | 0x4F | `slow_key_mult` | 50 | ×100 | 硬编码 `SLOW_KEY_MULTIPLIER 0.5f` |
 
 > `0x4D`–`0x4F` 三个原本连 Kconfig 都没有，是写死在 `.c` 里的手感核心。
+>
+> **名称前缀**：右手段参数在 dongle 侧统一带 `tp_` 前缀（`tp_base_speed`、`tp_scroll_deadzone`…），
+> 避免与左手同名参数混淆；命令里用 ID 或这个名字都可以。
 
 ### 控制命令（两半共用）
 
@@ -92,55 +95,73 @@ struct zmk_behavior_binding_event ev = {
     .position = 0,
     .layer = 0,
     .timestamp = k_uptime_get(),
-    .source = ZMK_POSITION_STATE_CHANGE_SOURCE_LOCAL,
 };
 for (int src = 0; src < ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT; src++) {
     zmk_split_central_invoke_behavior(src, &b, ev, true);
 }
 ```
 
-两半侧注册同名 behavior：
+两半侧各注册一个名字叫 `tune` 的 behavior（`custom_driver_left/tune_behavior.c` /
+`custom_driver_right/tune_behavior.c`）。
 
-```dts
-/ {
-    behaviors {
-        tune: tune {
-            compatible = "zmk,behavior-tune";
-            #binding-cells = <2>;
-        };
-    };
+**不走 devicetree 注册**：ZMK 的 `BEHAVIOR_DT_DEFINE()` 需要 `dts/bindings/` 下的 binding yaml，
+而 user config 仓库的 dts 不在 Zephyr 的 `DTS_ROOT` 搜索路径内（只有 ZMK app 自己的 `app/dts`
+在内）。所以直接注册 `zmk_behavior_ref` 条目 —— 这正是 `BEHAVIOR_DT_DEFINE()` 展开后做的事，
+其中 `node_id` 只用于生成 metadata，省略即可（`ZMK_BEHAVIOR_METADATA` 默认为 n）。
+ZMK 外设端执行下发命令时不查 keymap，只用名字查 behavior 表
+（`app/src/split/peripheral.c` 的 `INVOKE_BEHAVIOR` 分支），故等效。
+
+```c
+static const struct behavior_driver_api tune_driver_api = {
+    .locality = BEHAVIOR_LOCALITY_CENTRAL,
+    .binding_pressed = on_tune_binding_pressed,
+    .binding_released = on_tune_binding_released,
+};
+DEVICE_DEFINE(zmk_behavior_tune, "tune", tune_init, NULL, NULL, NULL, POST_KERNEL,
+              CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &tune_driver_api);
+/* 等价于 BEHAVIOR_DEFINE()，不依赖 devicetree */
+static const STRUCT_SECTION_ITERABLE(zmk_behavior_ref, zmk_behavior_tune_ref) = {
+    .device = DEVICE_GET(zmk_behavior_tune),
 };
 ```
 
-behavior 的 `on_keymap_binding_pressed` 里按 ID 段判断：
-左手只处理 `0x01–0x3F`，右手只处理 `0x40–0x7F`，越界直接返回（静默忽略）。
-值用 `uint32` 原样承载 `int32` 位模式，两半按需转回有符号。
+设备名 `"tune"` 必须与 dongle 下发的 `behavior_dev` 逐字一致。
+
+`binding_pressed` 里按 ID 段判断：左手只处理 `0x01–0x3F`，右手只处理 `0x40–0x7F`，
+越界静默忽略（各自的 `*_param_apply()` 返回 -1）。值用 `uint32` 原样承载 `int32` 位模式。
 
 ## 串口协议（dongle 的 CDC-ACM）
 
-沿用左手现有风格，文本行协议，`\r\n` 结尾：
+文本行协议，`\r\n` 结尾（沿用左手原调参串口的风格）：
 
 | 命令 | 返回 | 说明 |
 |---|---|---|
-| `GET` | 全表 `id=name=value` 逐行 | 读 dongle 缓存的当前值 |
-| `SET <id> <value>` | `OK` / `ERR ...` | 改一个参数并**立即广播**到两半 |
-| `SETALL` | `OK` | 把缓存全表重推一遍（排障用） |
-| `SAVE` | `OK` | 把缓存写入 dongle flash |
-| `RESET` | `OK` | 恢复默认值并广播 |
-| `STATUS` | `n=<已连外设数>` 等 | 看两半连接状况 |
+| `GET` | 全表 `name=value` 逐行 + `OK` | 读 dongle 权威表的当前值 |
+| `SET <key> <value>` | `OK` / `ERR ...` | 改一个参数并**立即广播**到两半；`key` 可为参数名或 ID（`0x41` / `65`） |
+| `SETALL` | `OK` | 把全表重推一遍 |
+| `SAVE` | `OK` | 把权威表写入 dongle flash |
+| `RESET` | `OK` | 恢复出厂默认并全表广播 |
+| `STATUS` | `params=` / `peripherals=` + `OK` | 参数条数与分体槽位数 |
+
+值支持负数（`tp_scroll_x_dir` 取 `1` / `-1`）。范围校验在 dongle 侧完成，越界返回 `ERR out of range`。
 
 ## 同步策略
 
-1. 网页改一个值 → `SET` → dongle 更新缓存 → 广播下发 → 两半立即生效
-2. `SAVE` → dongle 写自己的 flash（两半不必写）
-3. dongle 每次感知到外设连上（`split_central_connected`）→ **自动全表推送**
-4. 因此：两半换固件、断电、`settings_reset` 都不影响参数，连上就恢复
+1. 网页改一个值 → `SET` → dongle 更新权威表 → 广播 → 两半立即生效
+2. `SAVE` → dongle 写自己的 flash（两半不写）
+3. **监听 `zmk_split_peripheral_status_changed`**：任一分体连上 → 延时 800ms 推全表（等 BLE 链路稳）
+4. dongle 上电 10 秒后再推一次作兜底（防止两半先于 dongle 就绪）
+5. 网页每次连上先发 `SETALL`，保证三方一致
+
+⇒ 两半断电、重启、重刷固件、`settings_reset` 都不影响手感，连上即自动恢复。
 
 ## 落地清单
 
-- [ ] 右手：15 个参数从 Kconfig/硬编码迁到运行时 `g_tp_params`
-- [ ] 右手：注册 `tune` behavior
-- [ ] 左手：`trackball_config` 接上 behavior 通道（保留或摘掉原 USB 串口）
-- [ ] dongle：CDC-ACM 串口协议 + 参数缓存 + `zmk_split_central_invoke_behavior` 下发
-- [ ] dongle：连接事件触发全表推送
+- [x] 右手：15 个参数从 Kconfig/硬编码迁到运行时 `g_tp_params`（宏名不变，调用点零改动）
+- [x] 右手：新增 `trackpoint_config.c/h` + `tune` behavior
+- [x] 左手：新增 `trackball_param_apply()` / `trackball_params_reset()` + `tune` behavior
+      （原 USB 串口调参通道**保留**，可作左手本地调试入口）
+- [x] dongle：CDC-ACM 串口协议 + 权威参数表 + `zmk_split_central_invoke_behavior` 广播
+- [x] dongle：外设连接事件触发全表推送
 - [ ] 网页：扩成两半统一面板
+- [ ] 刷三块板 + 真机验收
