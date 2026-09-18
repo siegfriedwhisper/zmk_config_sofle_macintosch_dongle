@@ -24,7 +24,12 @@
         zephyr,console = &cdc_acm_uart;
         zmk,kscan = &kscan0;
         zmk,physical-layouts = &sofle_dongle_layout;
-        zmk,studio-rpc-uart = &cdc_acm_uart; // ✅ 
+        /*
+         * zmk,studio-rpc-uart 已于 2026-09-18 移除：
+         * ZMK Studio 已关闭（CONFIG_ZMK_STUDIO=n），cdc_acm_uart 专供
+         * 轨迹球运行时调参协议（custom_driver_left/trackball_config.c）。
+         */
+
     };
     default_transform: keymap_transform_0 {
         compatible = "zmk,matrix-transform";

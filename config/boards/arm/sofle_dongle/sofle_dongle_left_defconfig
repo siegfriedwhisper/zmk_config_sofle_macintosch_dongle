@@ -66,10 +66,9 @@ CONFIG_ZMK_BLE=y
 # Milliseconds to wait after a setting change before writing it to flash memory
 CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE=1000
 
-# ZMK Studio
-CONFIG_ZMK_STUDIO=y
-CONFIG_ZMK_STUDIO_LOCKING=n
-CONFIG_ZMK_STUDIO_LOCK_ON_DISCONNECT=n
+# ZMK Studio — 2026-09-18 关闭：它占用 cdc_acm_uart，与轨迹球运行时调参串口冲突；
+# 串口让给 custom_driver_left/trackball_config.c，改键位走编译固件。
+CONFIG_ZMK_STUDIO=n
 
 # Log via USB or Segger RTT
 CONFIG_ZMK_USB_LOGGING=n
