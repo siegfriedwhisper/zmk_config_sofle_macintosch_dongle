@@ -27,6 +27,8 @@
 
 #include <zmk/behavior.h>
 #include <zmk/split/central.h>
+#include <zmk/event_manager.h>
+#include <zmk/events/split_peripheral_status_changed.h>
 
 LOG_MODULE_REGISTER(tune_host, LOG_LEVEL_INF);
 
@@ -307,13 +309,23 @@ static void serial_thread(void *p1, void *p2, void *p3) {
 K_THREAD_STACK_DEFINE(tune_serial_stack, 2048);
 static struct k_thread tune_serial_thr;
 
-/* 上电后延时推送一次全表（此时 BLE 分体链路应已建立）。
- * 网页端每次连上也会主动发 SETALL 兜底。 */
-static void tune_startup_push(struct k_work *work) {
+/* 推送动作一律走延时 work：不在事件线程里同步播 21 个参数 */
+static void tune_push_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
     tune_push_all();
 }
-static K_WORK_DELAYABLE_DEFINE(tune_startup_work, tune_startup_push);
+static K_WORK_DELAYABLE_DEFINE(tune_push_work, tune_push_work_handler);
+
+/* 外设连上 → 稍等链路稳定后推全表
+ * （两半断电/重启/重刷后手感自动恢复，不依赖网页在场） */
+static void tune_peripheral_status_changed(zmk_split_peripheral_status_changed_t *event) {
+    if (event->connected) {
+        k_work_schedule(&tune_push_work, K_MSEC(800));
+    }
+}
+
+ZMK_LISTENER(tune_host_status, tune_peripheral_status_changed);
+ZMK_SUBSCRIPTION(tune_host_status, zmk_split_peripheral_status_changed);
 
 static int tune_host_init(void) {
     cdc_dev = DEVICE_DT_GET(DT_NODELABEL(cdc_acm_uart));
@@ -321,7 +333,8 @@ static int tune_host_init(void) {
     k_thread_create(&tune_serial_thr, tune_serial_stack, K_THREAD_STACK_SIZEOF(tune_serial_stack),
                     serial_thread, NULL, NULL, NULL, 7, 0, K_NO_WAIT);
 
-    k_work_schedule(&tune_startup_work, K_SECONDS(TUNE_STARTUP_PUSH_DELAY_S));
+    /* 兜底：万一连接事件没触发（两半先于 dongle 就绪），上电后也推一次 */
+    k_work_schedule(&tune_push_work, K_SECONDS(TUNE_STARTUP_PUSH_DELAY_S));
 
     LOG_INF("tune host ready: %u params", (unsigned)TUNE_PARAM_COUNT);
     return 0;
