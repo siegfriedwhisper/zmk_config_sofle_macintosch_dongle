@@ -317,11 +317,16 @@ static void tune_push_work_handler(struct k_work *work) {
 static K_WORK_DELAYABLE_DEFINE(tune_push_work, tune_push_work_handler);
 
 /* 外设连上 → 稍等链路稳定后推全表
- * （两半断电/重启/重刷后手感自动恢复，不依赖网页在场） */
-static void tune_peripheral_status_changed(zmk_split_peripheral_status_changed_t *event) {
-    if (event->connected) {
+ * （两半断电/重启/重刷后手感自动恢复，不依赖网页在场）
+ *
+ * 注意：ZMK 的监听回调签名固定为 int(const zmk_event_t *)，事件体要用
+ * ZMK_EVENT_DECLARE 生成的 as_<事件名>() 转换取到，不能直接收结构体。 */
+static int tune_peripheral_status_changed(const zmk_event_t *eh) {
+    struct zmk_split_peripheral_status_changed *ev = as_zmk_split_peripheral_status_changed(eh);
+    if (ev && ev->connected) {
         k_work_schedule(&tune_push_work, K_MSEC(800));
     }
+    return ZMK_EV_EVENT_BUBBLE;
 }
 
 ZMK_LISTENER(tune_host_status, tune_peripheral_status_changed);
