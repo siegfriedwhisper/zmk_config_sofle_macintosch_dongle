@@ -39,8 +39,8 @@ extern const uint16_t speed_lut_base[SPEED_LUT_SIZE];  /* 原物理查表 */
  * API
  * ========================================================= */
 
-/** 初始化：重建 LUT + 从 settings 加载 */
-void trackball_config_init(void);
+/* 注：初始化（重建 LUT + 加载 settings）由本模块内的 SYS_INIT 触发，
+ *     函数为 static，不对外暴露声明。 */
 
 /** 按当前 sens 重建缩放查表 g_speed_lut_eff */
 void trackball_config_rebuild_lut(void);
