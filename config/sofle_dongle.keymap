@@ -105,7 +105,7 @@
 &kp TAB    &kp Q    &kp W      &kp E    &kp R      &kp T                                                            &kp Y        &kp U       &kp I      &kp O     &kp P      &kp BSLH
 &kp LSHFT  &kp A    &kp S      &kp D    &kp F      &kp G     &mkp LCLK                     &mkp LCLK                &kp H        &kp J       &kp K      &kp L     &kp RETURN &kp RETURN
 &kp LCTRL  &kp Z    &kp X      &kp C    &kp V      &kp B     &mkp LCLK   &mkp RCLK         &kp PAGE_DOWN   &kp PAGE_UP  &kp N        &kp M       &kp COMMA  &kp DOT   &kp EQUAL  &kp DEL
-                    &kp LGUI   &kp LALT &kp SPACE  &kp SPACE &to 1                         &to 2                    &kp KP_PLUS  &kp MINUS   &kp STAR   &kp SLASH
+                    &kp LGUI   &kp LALT &kp SPACE  &kp SPACE &to 1                         &to 2                    &kp LPAR     &kp RPAR    &kp LBKT   &kp RBKT
            >;
            sensor-bindings = <&inc_dec_kp DOWN UP>, <&inc_dec_kp LEFT RIGHT>;
         };
