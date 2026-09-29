@@ -64,10 +64,10 @@ layers:
   - SPACE
   - {t: '#', h: toggle}
   - {t: F3, h: toggle}
-  - KP PLUS
-  - '-'
-  - '*'
-  - /
+  - (
+  - )
+  - '['
+  - ']'
   '#':
   - '&bootloader'
   - ESC
